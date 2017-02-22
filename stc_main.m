@@ -1,10 +1,11 @@
 % Begum, FM, Yarkin, Yigit
 % This file models a STC system for sea clutter
 waveSpeed = 299792.458; % speed of wave (km/s)
-sampleNumber = 100000; % number of samples to applied to 
+sampleNumber = 10000000; % number of samples to applied to (can be changed)
+elementCnt = sampleNumber + 1;
 max_see = 146.38303661; % (2/4096)*waveSpeed; % range of radar (km)
-increment = 0.001463830361; % max_see / sampleNumber; % list of sample kms
-% sz = 100001; %  (max_see * increment + 1);
+increment = max_see / sampleNumber; % list of sample kms
+
 sea_ground = 5; % ensure entance of while
 while(sea_ground ~= 0 && sea_ground ~= 1) % input check (1 or 0)
     sea_ground = input('1 for ground 0 for sea: ');
@@ -22,12 +23,12 @@ pwr = 2*(sea_ground + 1); % set power 4 for ground, 2 for sea
 coef = ((1 - att_zero) / (max_dis.^pwr)); % coefficent of gain
 dis = 0:increment:max_see; % store sample distances
 
-filtered =  stc(pwr, coef, max_dis, dis); % apply each element in to filter
+STCgain =  stc(pwr, coef, max_dis, dis); % apply each element in to filter
 
-eNMax = uint64(max_dis / increment);
+eNMax = uint64(max_dis / increment); % do not apply stc after that index
 
-for i = eNMax:100001
-   filtered(1,i) = 1;
+for i = eNMax:elementCnt % remove filter from distances after index
+   STCgain(1,i) = 1;
 end
 
-plot(dis, filtered);
+plot(dis, STCgain);
