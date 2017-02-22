@@ -22,8 +22,7 @@ pwr = 2*(sea_ground + 1); % set power 4 for ground, 2 for sea
 coef = ((1 - att_zero) / (max_dis.^pwr)); % coefficent of gain
 dis = 0:increment:max_see; % store sample distances
 
-%out = ones(1, 100001); % initialize filter values
-filtered =  stc(power, coef, max_dis, dis); % apply each element in to filter
+filtered =  stc(pwr, coef, max_dis, dis); % apply each element in to filter
 
 eNMax = uint64(max_dis / increment);
 
