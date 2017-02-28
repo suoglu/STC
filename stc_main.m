@@ -3,7 +3,7 @@
 waveSpeed = 299792.458; % speed of wave (km/s)
 sampleNumber = 10000000; % number of samples to applied to (can be changed)
 elementCnt = sampleNumber + 1;
-max_see = 146.38303661; % (2/4096)*waveSpeed; % range of radar (km)
+max_see = (2/4096)*waveSpeed/2; %146.38303661 ; % range of radar (km)
 increment = max_see / sampleNumber; % list of sample kms
 
 sea_ground = 5; % ensure entance of while
