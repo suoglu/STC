@@ -12,12 +12,14 @@ while(type > 2 || type < 0)
 end
 
 if(type == 0)
-    freq = 3.3;
+    freq = 3.3; %kHz
 elseif(type == 1)
-    freq = 1.6;
+    freq = 1.6; %kHz
 else
-    freq = 0.86;
+    freq = 0.86; %kHz
 end
+
+fGhz = freq / (1000 * 1000); %convert kHz to MHz than to GHz
 
 type = -1;
 SS = -1;
@@ -43,7 +45,7 @@ while(Psi > 359 || Psi < 0)
     Psi = input('Grazing angle in deg: ');
 end
 
-reflectivity = NRL_SigmaSea(freq,SS,Pol,Psi);
+reflectivity = NRL_SigmaSea(fGhz,SS,Pol,Psi);
 
 ref_array=[];
 for i=1:(sampleNumber)
