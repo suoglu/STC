@@ -2,12 +2,13 @@
 // All modules in this file designed to work with 50MHz clock frequency
 `timescale 1ns / 1ps
 
-// This module simulates sea clutter and radar interface
-module radar(arp, acp, trig, rst, clk);
+//This module simulates sea clutter and radar interface
+module radar(arp, acp, trig, rst, clk, video);
   input clk, rst; //clk feq is 50 MHz, period is 20ns
   output trig; //Master Trigger signal
   output arp, acp; //Azimuth Reset Pulse, Azimuth Change Pulse
   reg [11:0] acpState; //for 4096 angles
+  output [11:0] video;
   wire clk_ACP; //Clock signal for acp
   //clk_ACP period equal to time between ACP signals (~488.280ns, 24412 cycle @ 50Mhz)
 
@@ -26,16 +27,22 @@ module radar(arp, acp, trig, rst, clk);
 
 
   acpClkgen_half acpC(.rst(rst), .clk(clk), .clk_ACP(clk_ACP)); //for 50% duty cycle of ACP
-//acpClkgen_one acpC(.rst(rst), .clk(clk), .clk_ACP(clk_ACP)); //for 1% duty cycle of ACP
+  //acpClkgen_one acpC(.rst(rst), .clk(clk), .clk_ACP(clk_ACP)); //for 1% duty cycle of ACP
 
   master_triger mtig(.clk(clk), .rst(rst), .arp(arp), .trig(trig));
-
-
+  clutter cltgen(.clk(clk), .rst(rst), .trig(trig), .video(video));
 endmodule
 
+//This module generates 12bit radar video with a sea clutter model
+//Video signal reset with master trigger signal
+module clutter(clk, rst, trig, video);
+  input clk, rst, trig; //control signals
+  output reg [11:0] video; //clutter video
 
 
-//this module generates Clock signal for ACP
+endmodule // clutter
+
+//This module generates Clock signal for ACP
 //created clock has period of 488.280ns and duty cycle of 50%
 //note: created clock accuracy depends on on-board oscillator
 module acpClkgen_half(rst, clk, clk_ACP);
@@ -59,7 +66,7 @@ module acpClkgen_half(rst, clk, clk_ACP);
   end
 endmodule
 
-//this module generates Clock signal for ACP
+//This module generates Clock signal for ACP
 //created clock has period of 488.280ns and duty cycle of ~1%
 //note: created clock accuracy depends on on-board oscillator
 module acpClkgen_one(rst, clk, clk_ACP);
@@ -95,7 +102,7 @@ module acpClkgen_one(rst, clk, clk_ACP);
 endmodule
 
 
-//this module creates trigger signal
+//This module creates trigger signal
 //trigger waits ARP signal to be high at least once to start after a reset
 //parameters can be adjusted
 module master_triger(clk, rst, arp, trig);
