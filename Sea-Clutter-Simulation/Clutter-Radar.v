@@ -9,7 +9,7 @@ module radar(arp, acp, trig, rst, clk, video);
   output arp, acp; //Azimuth Reset Pulse, Azimuth Change Pulse
   reg [11:0] acpState; //for 4096 angles
   output [11:0] video;
-  wire clk_ACP; //Clock signal for acp
+  wire clk_ACP, clk_vid; //Clock signal for acp, video
   //clk_ACP period equal to time between ACP signals (~488.280ns, 24412 cycle @ 50Mhz)
 
 
@@ -25,22 +25,15 @@ module radar(arp, acp, trig, rst, clk, video);
 
   assign acp = clk_ACP; //for simplicity ACP signal is same as its clock
 
+  clk_div_vid clkDivider(.clk(clk), .rst(rst), .clk_vid(clk_vid));
 
   acpClkgen_half acpC(.rst(rst), .clk(clk), .clk_ACP(clk_ACP)); //for 50% duty cycle of ACP
   //acpClkgen_one acpC(.rst(rst), .clk(clk), .clk_ACP(clk_ACP)); //for 1% duty cycle of ACP
 
   master_triger mtig(.clk(clk), .rst(rst), .arp(arp), .trig(trig));
-  clutter cltgen(.clk(clk), .rst(rst), .trig(trig), .video(video));
+  clutter cltgen(.clk(clk_vid), .rst(rst), .trig(trig), .video(video), .pulseAct(trig));
+  //Note: This system assumes master trigger is high while transmitting pulse
 endmodule
-
-//This module generates 12bit radar video with a sea clutter model
-//Video signal reset with master trigger signal
-module clutter(clk, rst, trig, video);
-  input clk, rst, trig; //control signals
-  output reg [11:0] video; //clutter video
-
-
-endmodule // clutter
 
 //This module generates Clock signal for ACP
 //created clock has period of 488.280ns and duty cycle of 50%
@@ -164,3 +157,48 @@ module master_triger(clk, rst, arp, trig);
         end
     end
 endmodule
+
+
+//This module is a clock divider for video signal
+//Divides clk by 8, for 50MHz (20ns) clk output is 25Mhz(40ns)
+module clk_div_vid(clk, rst, clk_vid);
+  input clk, rst;
+  output reg clk_vid;
+
+  always@(posedge clk or posedge rst)
+    begin
+      if(rst)
+        begin
+          clk_vid <= 0;
+        end
+      else
+        begin
+          clk_vid <= ~clk_vid;
+        end
+    end
+endmodule
+
+//This module generates 12bit radar video with a sea clutter model
+//Video signal reset with master trigger signal
+//pulseAct signal should be high during to pulse
+//Clk period is 40ns (25Mhz)
+//Each clock cycle radar shows ~48 meters
+module clutter(clk, rst, trig, video, pulseAct);
+  input clk, rst, trig, pulseAct; //control signals
+  output reg [11:0] video; //clutter video
+  reg [11:0] signal;
+  reg [13:0] sample;
+
+  always@(posedge clk)
+    begin
+        if(pulseAct)
+          begin
+            signal <= 12'b111111111111;
+          end
+        else
+          begin
+
+          end
+    end
+
+endmodule // clutter
