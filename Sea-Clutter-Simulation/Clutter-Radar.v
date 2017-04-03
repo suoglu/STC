@@ -27,8 +27,9 @@ module radar(arp, acp, trig, rst, clk, video);
 
   clk_div_vid clkDivider(.clk(clk), .rst(rst), .clk_vid(clk_vid));
 
-  acpClkgen_half acpC(.rst(rst), .clk(clk), .clk_ACP(clk_ACP)); //for 50% duty cycle of ACP
-  //acpClkgen_one acpC(.rst(rst), .clk(clk), .clk_ACP(clk_ACP)); //for 1% duty cycle of ACP
+  //Note: system is not working with 50% duty cycle for now
+  //acpClkgen_half acpC(.rst(rst), .clk(clk), .clk_ACP(clk_ACP)); //for 50% duty cycle of ACP
+  acpClkgen_one acpC(.rst(rst), .clk(clk), .clk_ACP(clk_ACP)); //for 1% duty cycle of ACP
 
   master_triger mtig(.clk(clk), .rst(rst), .arp(arp), .trig(trig));
   clutter cltgen(.clk(clk_vid), .rst(rst), .trig(trig), .video(video), .pulseAct(trig));
@@ -559,7 +560,7 @@ module clutter(clk, rst, trig, video, pulseAct);
           end
     end
 
-    always@(posedge clk)
+  always@(posedge clk)
       begin
         if(pulseAct)
           begin //sampleNumber reset when pulseAct is high
