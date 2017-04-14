@@ -2,6 +2,84 @@
 // All modules in this file designed to work with 50MHz clock frequency
 `timescale 1ns / 1ps
 
+//This module makes connections for radar module
+module radar_board(arp, acp, trig, rst, clk, DACin, DAC_CLR, DACclk, DAC_CS, LED);
+  input clk, rst;
+  output trig, arp, acp, DAC_CLR, DACin, DACclk;
+  output reg  DAC_CS;
+  reg [19:0] DACreg;
+  //wire [24:0] DACrad;
+  reg [4:0] DACstate;
+  output reg [6:0] LED; //display acp state in 7bits, repeads itself 32 times in 2sec
+  wire [11:0] video;
+  wire [3:0] cmd, adrs;
+  wire shiftReset;
+
+  radar core(.arp(arp), .acp(acp), .trig(trig), .rst(rst), .clk(clk), .video(video));
+
+  assign DACin = DACreg[19];
+  
+  always@(posedge clk or posedge rst) //provide serial data for DAC
+  begin
+	if(rst) //dac enable
+		begin
+			DAC_CS <= 1;
+		end
+	else if(DACstate == 5'd0)
+		begin
+			DAC_CS <= 0;
+		end
+	else if(DACstate == 5'd24)
+		begin
+			DAC_CS <= 1;
+		end
+		
+	if(rst)  //dac counter
+		begin
+			DACstate <= 5'd0;
+		end
+	else if(DACstate == 5'd24)
+		begin
+			DACstate <= 5'd0;
+		end
+	else
+		begin
+			DACstate <= DACstate + 5'd1;
+		end
+	end
+  
+  assign shiftReset = ~(|DACstate);
+  
+  always@(negedge DACclk or posedge shiftReset)
+	begin
+	if(shiftReset) //dac register
+		begin
+			DACreg <= {cmd, adrs, video};
+		end
+	else
+		begin
+			DACreg <= (DACreg << 1);
+		end
+	end
+  
+  
+  assign DACclk = ~clk & (~DAC_CS);
+  assign DAC_CLR = rst;
+
+  assign adrs = 4'b1111; //send video to all DACs
+  assign cmd = 4'b0011; //immediately updates the selected DAC output with the specified data value
+  
+  always@(posedge acp or posedge rst)
+  begin
+	if(rst)
+		LED <= 7'b0;
+	else
+		LED <= LED + 7'b1;
+  end
+
+endmodule
+
+
 //This module simulates sea clutter and radar interface
 module radar(arp, acp, trig, rst, clk, video);
   input clk, rst; //clk feq is 50 MHz, period is 20ns
@@ -14,6 +92,8 @@ module radar(arp, acp, trig, rst, clk, video);
 
   assign arp = (acpState == 12'b0) & acp; //ARP is high only when ACP is high and ACP counter is at zero
 
+  
+  
   always@(posedge clk_ACP or posedge rst) //ACP state
   begin
     if(rst)
@@ -733,6 +813,5 @@ module clutter(clk, rst, video, pulseAct);
 
       assign {carry, preVideo} = {1'b0, randNoise_wLoss} + signal;
 
-
-      NumGen numberGenerator(.clk(clk), .rst(rst), .out(randNoise));
+    NumGen numberGenerator(.clk(clk), .rst(rst), .out(randNoise));
 endmodule // clutter
