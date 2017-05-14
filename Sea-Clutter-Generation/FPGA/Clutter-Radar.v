@@ -1,92 +1,138 @@
 // Yigit Suoglu, Furkan Mert Algan
 // All modules in this file designed to work with 50MHz clock frequency
+// radar_board module is designed for SPARTAN 3AN starter kit
 `timescale 1ns / 1ps
 
 //This module makes connections for radar module
-module radar_board(arp, acp, trig, rst, clk, DACin, DAC_CLR, DACclk, DAC_CS, LED);
+module radar_board(arp, acp, trig, reset, clk, SPIin, DAC_CLR, SPIclk, DAC_CS, LED, readSW, ADC_CS);
 	parameter DACcount = 5'd25;
-  input clk, rst;
-  output trig, arp, acp, DAC_CLR, DACin, DACclk;
-  output reg  DAC_CS;
+  input clk, reset;
+	input readSW; //1 to read data from ADC, 0 to generate inside
+  output DAC_CLR, SPIin, SPIclk;
+  output reg  DAC_CS, trig, arp, acp, ADC_CS, ADC_rst; //ADC_rst is AMP_SHDN
   reg [19:0] DACreg;
   //wire [24:0] DACrad;
   reg [4:0] DACstate;
+	reg [13:0] readData;
   output reg [6:0] LED; //display acp state in 7bits, repeads itself 32 times in 2sec
-  wire [11:0] video;
+  wire [11:0] video, video_g;
   wire [3:0] cmd, adrs;
-  wire shiftReset;
+	wire	arp_g, acp_g, trig_g; //Generated signals
+	input	arp_r, acp_r, trig_r; //Read signals
+  wire shiftReset, rst;
+	reg DACactive, setReset, ADCactive;
+	reg [7:0] ADCin;
+	reg [3:0] ADC_rstState;
 
-  radar core(.arp(arp), .acp(acp), .trig(trig), .rst(rst), .clk(clk), .video(video));
+  radar signalGenerator(.arp(arp_g), .acp(acp_g), .trig(trig_g), .rst(rst), .clk(clk), .video(video));
 
-  assign DACin = DACreg[19];
-  
+	assign rst = reset | setReset;
+
+	always@(posedge clk or posedge rst) //handles setup of ADC
+	  begin
+	  	if(rst)
+				begin
+					case (ADC_rstState)
+						4'b0:
+							begin
+								setReset <= 1;
+								ADC_rst <= 1;
+							end
+						4'b0001:
+							begin
+								ADC_rst <= 0;
+								ADCin <= 8'b00000001; //Set gain as -1 (Range 0.4-2.9)
+								ADC_CS <= 0;
+							end
+						4'b1000:
+							begin
+								ADC_rstState <= 4'b0;
+								setReset <= 0;
+								ADC_CS <= 1;
+							end
+						default:
+							begin
+								ADC_rstState <= ADC_rstState + 4'b1;
+								ADCin <= (ADCin << 1);
+							end
+					endcase
+				end
+	  end
+
+  assign SPIin = (DACactive) ? DACreg[19] : ADCin[7];
+
+	assign video = (readSW) ? readData[13:2] : video_g;
+
+	always@*
+	  begin
+	  	if(readSW)
+				begin
+						arp = arp_r;
+						acp = acp_r;
+						trig = trig_r;
+				end
+			else
+				begin
+						arp = arp_g;
+						acp = acp_g;
+						trig = trig_g;
+				end
+	  end
+
   always@*
-  begin
-	if(DACstate == 5'd0)
-		DAC_CS <= 1;
-	else if((DACstate == DACcount) & ~(clk))
-		DAC_CS <= 1;
-	else
-		DAC_CS <= 0;
-  end
-  
+	  begin
+			if(DACstate == 5'd0)
+				DAC_CS <= 1;
+			else if((DACstate == DACcount) & ~(clk))
+				DAC_CS <= 1;
+			else
+				DAC_CS <= 0;
+	  end
+
   always@(posedge clk or posedge rst) //provide serial data for DAC
-  begin
-	/*if(rst) //dac enable
-		begin
-			DAC_CS <= 1;
+	  begin
+			if(rst)  //dac counter
+				begin
+					DACstate <= 5'd0;
+				end
+			else if(DACstate == DACcount)
+				begin
+					DACstate <= 5'd0;
+				end
+			else
+				begin
+					DACstate <= DACstate + 5'd1;
+				end
 		end
-	else if(DACstate == 5'd0)
+
+	  assign shiftReset = ~(|DACstate);
+
+	  always@(negedge SPIclk or posedge shiftReset)
 		begin
-			DAC_CS <= 0;
+		if(shiftReset) //dac register
+			begin
+				DACreg <= {cmd, adrs, video};
+			end
+		else
+			begin
+				DACreg <= (DACreg << 1);
+			end
 		end
-	else if(DACstate == 5'd24)
-		begin
-			DAC_CS <= 1;
-		end
-		*/
-	if(rst)  //dac counter
-		begin
-			DACstate <= 5'd0;
-		end
-	else if(DACstate == DACcount)
-		begin
-			DACstate <= 5'd0;
-		end
-	else
-		begin
-			DACstate <= DACstate + 5'd1;
-		end
-	end
-  
-  assign shiftReset = ~(|DACstate);
-  
-  always@(negedge DACclk or posedge shiftReset)
-	begin
-	if(shiftReset) //dac register
-		begin
-			DACreg <= {cmd, adrs, video};
-		end
-	else
-		begin
-			DACreg <= (DACreg << 1);
-		end
-	end
-  
-  
-  assign DACclk = ~clk & (~DAC_CS);
+
+
+  assign SPIclk = ~clk & ((~DAC_CS)|(~ADC_CS));
   assign DAC_CLR = ~rst;
 
-  assign adrs = 4'b1111; //send video to all DACs
+  assign adrs = 4'b0000; //send video to DAC A
   assign cmd = 4'b0011; //immediately updates the selected DAC output with the specified data value
-  
+
   always@(posedge acp or posedge rst)
-  begin
-	if(rst)
-		LED <= 7'b0;
-	else
-		LED <= LED + 7'b1;
-  end
+	  begin
+			if(rst)
+				LED <= 7'b0;
+			else
+				LED <= LED + 7'b1;
+	  end
 
 endmodule
 
@@ -103,15 +149,15 @@ module radar(arp, acp, trig, rst, clk, video);
 
   assign arp = (acpState == 12'b0) & acp; //ARP is high only when ACP is high and ACP counter is at zero
 
-  
-  
+
+
   always@(posedge clk_ACP or posedge rst) //ACP state
-  begin
-    if(rst)
-      acpState <= 12'b0;
-    else
-      acpState <= acpState + 12'b1;
-  end
+	  begin
+	    if(rst)
+	      acpState <= 12'b0;
+	    else
+	      acpState <= acpState + 12'b1;
+	  end
 
   assign acp = clk_ACP; //for simplicity ACP signal is same as its clock
 
@@ -133,20 +179,20 @@ module acpClkgen_half(rst, clk, clk_ACP);
   output reg clk_ACP;
   reg [13:0] acpClk; //Counter state
   always@(posedge clk or posedge rst) //ACP clk generation
-  begin
-    if(rst) //if reset
-      begin
-        clk_ACP <= 0; //clk is low
-        acpClk <= 14'b0; //counter is initialised
-      end
-    else if(acpClk == 14'd12207) //if counter is reached count number
-      begin
-        acpClk <= 14'b0; //reset count
-        clk_ACP = ~clk_ACP; //invert clk, create edge
-      end
-    else //otherwise
-        acpClk <= acpClk + 14'b1; //count up
-  end
+	  begin
+	    if(rst) //if reset
+	      begin
+	        clk_ACP <= 0; //clk is low
+	        acpClk <= 14'b0; //counter is initialised
+	      end
+	    else if(acpClk == 14'd12207) //if counter is reached count number
+	      begin
+	        acpClk <= 14'b0; //reset count
+	        clk_ACP = ~clk_ACP; //invert clk, create edge
+	      end
+	    else //otherwise
+	        acpClk <= acpClk + 14'b1; //count up
+	  end
 endmodule
 
 //This module generates Clock signal for ACP
@@ -283,69 +329,69 @@ module NumGen(clk, rst, out);
 
   //8-bit lfsr starts here
   always@*
-  begin
-    lfsr8_next[7] = lfsr8[7]^lfsr8[1];
-    lfsr8_next[6] = lfsr8[6]^lfsr8[0];
-    lfsr8_next[5] = lfsr8[5]^lfsr8_next[7];
-    lfsr8_next[4] = lfsr8[4]^lfsr8_next[6];
-    lfsr8_next[3] = lfsr8[3]^lfsr8_next[5];
-    lfsr8_next[2] = lfsr8[2]^lfsr8_next[4];
-    lfsr8_next[1] = lfsr8[1]^lfsr8_next[3];
-    lfsr8_next[0] = lfsr8[0]^lfsr8_next[2];
-  end
+	  begin
+	    lfsr8_next[7] = lfsr8[7]^lfsr8[1];
+	    lfsr8_next[6] = lfsr8[6]^lfsr8[0];
+	    lfsr8_next[5] = lfsr8[5]^lfsr8_next[7];
+	    lfsr8_next[4] = lfsr8[4]^lfsr8_next[6];
+	    lfsr8_next[3] = lfsr8[3]^lfsr8_next[5];
+	    lfsr8_next[2] = lfsr8[2]^lfsr8_next[4];
+	    lfsr8_next[1] = lfsr8[1]^lfsr8_next[3];
+	    lfsr8_next[0] = lfsr8[0]^lfsr8_next[2];
+	  end
 
   always @(posedge clk or posedge rst)
-  begin
-    if(rst)
-      lfsr8 <= 8'b11111111;
-    else
-      lfsr8 <= lfsr8_next;
-  end
+	  begin
+	    if(rst)
+	      lfsr8 <= 8'b11111111;
+	    else
+	      lfsr8 <= lfsr8_next;
+	  end
   //8-bit lfsr ends here
   //9-bit lfsr starts here
   always@*
-  begin
-    lfsr9_next[8] = lfsr9[8]^lfsr9[1];
-    lfsr9_next[7] = lfsr9[7]^lfsr9[0];
-    lfsr9_next[6] = lfsr9[6]^lfsr9_next[8];
-    lfsr9_next[5] = lfsr9[5]^lfsr9_next[7];
-    lfsr9_next[4] = lfsr9[4]^lfsr9_next[6];
-    lfsr9_next[3] = lfsr9[3]^lfsr9_next[5];
-    lfsr9_next[2] = lfsr9[2]^lfsr9_next[4];
-    lfsr9_next[1] = lfsr9[1]^lfsr9_next[3];
-    lfsr9_next[0] = lfsr9[0]^lfsr9_next[2];
-  end
+	  begin
+	    lfsr9_next[8] = lfsr9[8]^lfsr9[1];
+	    lfsr9_next[7] = lfsr9[7]^lfsr9[0];
+	    lfsr9_next[6] = lfsr9[6]^lfsr9_next[8];
+	    lfsr9_next[5] = lfsr9[5]^lfsr9_next[7];
+	    lfsr9_next[4] = lfsr9[4]^lfsr9_next[6];
+	    lfsr9_next[3] = lfsr9[3]^lfsr9_next[5];
+	    lfsr9_next[2] = lfsr9[2]^lfsr9_next[4];
+	    lfsr9_next[1] = lfsr9[1]^lfsr9_next[3];
+	    lfsr9_next[0] = lfsr9[0]^lfsr9_next[2];
+	  end
 
   always @(posedge clk or posedge rst)
-  begin
-    if(rst)
-      lfsr9 <= 9'b111111111;
-    else
-      lfsr9 <= lfsr9_next;
-  end
+	  begin
+	    if(rst)
+	      lfsr9 <= 9'b111111111;
+	    else
+	      lfsr9 <= lfsr9_next;
+	  end
   //9-bit lfsr ends here
   //10-bit lfsr starts here
   always@*
-  begin
-    lfsr10_next[9] = lfsr10[9]^lfsr10[1];
-    lfsr10_next[8] = lfsr10[8]^lfsr10[0];
-    lfsr10_next[7] = lfsr10[7]^lfsr10_next[9];
-    lfsr10_next[6] = lfsr10[6]^lfsr10_next[8];
-    lfsr10_next[5] = lfsr10[5]^lfsr10_next[7];
-    lfsr10_next[4] = lfsr10[4]^lfsr10_next[6];
-    lfsr10_next[3] = lfsr10[3]^lfsr10_next[5];
-    lfsr10_next[2] = lfsr10[2]^lfsr10_next[4];
-    lfsr10_next[1] = lfsr10[1]^lfsr10_next[3];
-    lfsr10_next[0] = lfsr10[0]^lfsr10_next[2];
-  end
+	  begin
+	    lfsr10_next[9] = lfsr10[9]^lfsr10[1];
+	    lfsr10_next[8] = lfsr10[8]^lfsr10[0];
+	    lfsr10_next[7] = lfsr10[7]^lfsr10_next[9];
+	    lfsr10_next[6] = lfsr10[6]^lfsr10_next[8];
+	    lfsr10_next[5] = lfsr10[5]^lfsr10_next[7];
+	    lfsr10_next[4] = lfsr10[4]^lfsr10_next[6];
+	    lfsr10_next[3] = lfsr10[3]^lfsr10_next[5];
+	    lfsr10_next[2] = lfsr10[2]^lfsr10_next[4];
+	    lfsr10_next[1] = lfsr10[1]^lfsr10_next[3];
+	    lfsr10_next[0] = lfsr10[0]^lfsr10_next[2];
+	  end
 
   always @(posedge clk or posedge rst)
-  begin
-    if(rst)
-      lfsr10 <= 10'b1111111111;
-    else
-      lfsr10 <= lfsr10_next;
-  end
+	  begin
+	    if(rst)
+	      lfsr10 <= 10'b1111111111;
+	    else
+	      lfsr10 <= lfsr10_next;
+	  end
   //10-bit lfsr ends here
 endmodule
 
@@ -813,13 +859,13 @@ module clutter(clk, rst, video, pulseAct);
     always@* //add number to signal, also take care overfloe
       begin
         if(carry)
-        begin
-          video = 12'd4095;
-        end
+	        begin
+	          video = 12'd4095;
+	        end
         else
-        begin
-          video = preVideo;
-        end
+	        begin
+	          video = preVideo;
+	        end
       end
 
       assign {carry, preVideo} = {1'b0, randNoise_wLoss} + signal;
