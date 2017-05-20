@@ -3,67 +3,228 @@
 // radar_board module is designed for SPARTAN 3AN starter kit
 `timescale 1ns / 1ps
 
-//This module makes connections for radar module
-module radar_board(arp, acp, trig, reset, clk, SPIin, DAC_CLR, SPIclk, DAC_CS, LED, readSW, ADC_CS);
+//This module makes connections for radar module, also redirects analog signal
+/* ucf connections follows as
+ * arp: J18_IO1 (AA21), acp: J18_IO2 (AB21), trig: J18_IO3 (AA19)
+ * arp_r: J20_IO1 (V14), acp_r: J20_IO2 (V15), trig_r: J20_IO3 (W16)
+ * Video output to DAC A
+ * Video input to ADC A
+ */
+module radar_board(arp, acp, trig, reset, clk, SPIin, DAC_CLR, SPIclk, DAC_CS, LED,
+	readSW, ADC_CS, arp_r, acp_r, trig_r, ADC_rst, AD_CONV, ADC_OUT);
 	parameter DACcount = 5'd25;
-  input clk, reset;
+  input clk, reset, ADC_OUT;
 	input readSW; //1 to read data from ADC, 0 to generate inside
   output DAC_CLR, SPIin, SPIclk;
-  output reg  DAC_CS, trig, arp, acp, ADC_CS, ADC_rst; //ADC_rst is AMP_SHDN
+  output reg  DAC_CS, trig, arp, acp, ADC_CS, ADC_rst, AD_CONV; //ADC_rst is AMP_SHDN
   reg [19:0] DACreg;
   //wire [24:0] DACrad;
   reg [4:0] DACstate;
-	reg [13:0] readData;
+	reg [13:2] readData;
   output reg [6:0] LED; //display acp state in 7bits, repeads itself 32 times in 2sec
-  wire [11:0] video, video_g;
+  wire [11:0] video, video_g, video_r;
   wire [3:0] cmd, adrs;
 	wire	arp_g, acp_g, trig_g; //Generated signals
 	input	arp_r, acp_r, trig_r; //Read signals
-  wire shiftReset, rst;
-	reg DACactive, setReset, ADCactive;
+  wire shiftReset, rst, ADCclk;
+	reg DACactive, setReset;
 	reg [7:0] ADCin;
 	reg [3:0] ADC_rstState;
+	reg [5:0] ADC_state;
 
-  radar signalGenerator(.arp(arp_g), .acp(acp_g), .trig(trig_g), .rst(rst), .clk(clk), .video(video));
+  radar signalGenerator(.arp(arp_g), .acp(acp_g), .trig(trig_g), .rst(rst), .clk(clk), .video(video_g));
 
 	assign rst = reset | setReset;
 
-	always@(posedge clk or posedge rst) //handles setup of ADC
+
+		assign ADCclk = clk & (~DAC_CS);
+
+	  assign SPIin = (DACactive) ? DACreg[19] : ADCin[7];
+
+		assign video = (readSW) ? video_r : video_g;
+
+		assign video_r = readData[13:2] + 12'b011111111111; //convert readdata to unsigned 12 bit
+
+
+		 assign SPIclk = ~clk & ((~DAC_CS)|(~ADC_CS));
+		 assign DAC_CLR = ~rst;
+
+		 assign adrs = 4'b0000; //send video to DAC A
+		 assign cmd = 4'b0011; //immediately updates the selected DAC output with the specified data value
+
+	always@(posedge clk or posedge reset) //handles setup of ADC
 	  begin
-	  	if(rst)
+	  	if(reset) //setReset: used to keep other signals resetted during ADC setup
+				begin
+						setReset <= 1;
+				end
+	  	else
 				begin
 					case (ADC_rstState)
-						4'b0:
+						4'b1000:
 							begin
-								setReset <= 1;
-								ADC_rst <= 1;
+								setReset <= 0;
 							end
+						default:
+							begin
+								setReset <= setReset;
+							end
+					endcase
+				end
+
+				if(reset) //ADC_rst: Active-High shutdown, reset (AMP_SHDN)
+					begin
+							ADC_rst <= 1;
+					end
+		  	else
+					begin
+						case (ADC_rstState)
+							4'b0001:
+								begin
+									ADC_rst <= 0;
+								end
+							default:
+								begin
+									ADC_rst <= ADC_rst;
+								end
+						endcase
+					end
+
+					if(reset) //DACactive: controls SPI data; 1 for DAC, 0 for ADC setup
+						begin
+								DACactive <= 0;
+						end
+			  	else
+						begin
+							case (ADC_rstState)
+								4'b1000:
+									begin
+										DACactive <= 1;
+									end
+								default:
+									begin
+										DACactive <= DACactive;
+									end
+							endcase
+						end
+
+				if(reset) //ADC_rstState: state transactions for ADC setup
+					begin
+							ADCin <= 8'b00000001; //Set gain as -1 (Range 0.4-2.9)
+					end
+		  	else
+					begin
+						case (ADC_rstState)
+							4'b0000:
+								begin
+									ADCin <= ADCin;
+								end
+							4'b0001:
+								begin
+									ADCin <= ADCin;
+								end
+							default:
+								begin
+									ADCin <= (ADCin << 1);
+								end
+						endcase
+					end
+
+
+					if(reset)
+						begin
+								ADC_rstState <= 4'd1;
+						end
+			  	else
+						begin
+							case (ADC_rstState)
+								4'b0:
+									begin
+										ADC_rstState <= 4'b0;
+									end
+			  				4'b1000:
+									begin
+										ADC_rstState <= 4'b0;
+									end
+								default:
+									begin
+										ADC_rstState <= ADC_rstState + 4'b1;
+									end
+							endcase
+						end
+
+				if(reset)
+					begin
+						ADC_CS <= 1;
+					end
+				else
+					case (ADC_rstState)
 						4'b0001:
 							begin
-								ADC_rst <= 0;
-								ADCin <= 8'b00000001; //Set gain as -1 (Range 0.4-2.9)
 								ADC_CS <= 0;
 							end
 						4'b1000:
 							begin
-								ADC_rstState <= 4'b0;
-								setReset <= 0;
 								ADC_CS <= 1;
 							end
 						default:
 							begin
-								ADC_rstState <= ADC_rstState + 4'b1;
-								ADCin <= (ADCin << 1);
+								ADC_CS <= ADC_CS;
 							end
 					endcase
-				end
+  end
+
+	always@(posedge ADCclk or posedge rst) //captures analog input
+	  begin
+			if(rst) //ADC state transactions
+			  begin
+			  	ADC_state <= 6'd0;
+			  end
+			else
+			  begin
+			  	case (ADC_state)
+			  		6'd33: ADC_state <= 6'd0;
+			  		default: ADC_state <= ADC_state + 6'd1;
+			  	endcase
+			  end
+
+				if(rst) //AD_CONV: Active-High, initiates conversion process.
+				  begin
+				  	AD_CONV <= 6'd0;
+				  end
+				else
+				  begin
+				  	case (ADC_state)
+				  		6'd0: AD_CONV <= 6'd1;
+				  		default: AD_CONV <= 6'd0;
+				  	endcase
+				  end
+
+					if(rst) //readData: captured data
+					  begin
+					  	readData <= 14'b01111111111111;
+					  end
+					else
+					  begin
+					  	case (ADC_state)
+					  		6'd3: readData[13] <= ADC_OUT;
+								6'd4: readData[12] <= ADC_OUT;
+								6'd5: readData[11] <= ADC_OUT;
+								6'd6: readData[10] <= ADC_OUT;
+								6'd7: readData[9] <= ADC_OUT;
+								6'd8: readData[8] <= ADC_OUT;
+								6'd9: readData[7] <= ADC_OUT;
+								6'd10: readData[6] <= ADC_OUT;
+								6'd11: readData[5] <= ADC_OUT;
+								6'd12: readData[4] <= ADC_OUT;
+								6'd13: readData[3] <= ADC_OUT;
+								6'd14: readData[2] <= ADC_OUT;
+					  		default: readData <= readData;
+					  	endcase
+					  end
 	  end
 
-  assign SPIin = (DACactive) ? DACreg[19] : ADCin[7];
-
-	assign video = (readSW) ? readData[13:2] : video_g;
-
-	always@*
+	always@* //switch control for arp acp and trig signals
 	  begin
 	  	if(readSW)
 				begin
@@ -79,7 +240,7 @@ module radar_board(arp, acp, trig, reset, clk, SPIin, DAC_CLR, SPIclk, DAC_CS, L
 				end
 	  end
 
-  always@*
+  always@* //DAC_CS signal
 	  begin
 			if(DACstate == 5'd0)
 				DAC_CS <= 1;
@@ -118,13 +279,6 @@ module radar_board(arp, acp, trig, reset, clk, SPIin, DAC_CLR, SPIclk, DAC_CS, L
 				DACreg <= (DACreg << 1);
 			end
 		end
-
-
-  assign SPIclk = ~clk & ((~DAC_CS)|(~ADC_CS));
-  assign DAC_CLR = ~rst;
-
-  assign adrs = 4'b0000; //send video to DAC A
-  assign cmd = 4'b0011; //immediately updates the selected DAC output with the specified data value
 
   always@(posedge acp or posedge rst)
 	  begin
