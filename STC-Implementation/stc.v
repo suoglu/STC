@@ -1,0 +1,3 @@
+module stc ();
+
+endmodule // stc
