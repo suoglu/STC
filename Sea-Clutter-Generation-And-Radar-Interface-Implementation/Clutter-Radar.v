@@ -10,12 +10,14 @@
  * Video output to DAC A
  * Video input to ADC A
  * readSW: SW0 (V8)
+ * stcSW: SW1 (U10)
  */
 module radar_board(arp, acp, trig, reset, clk, SPIin, DAC_CLR, SPIclk, DAC_CS, LED,
-	readSW, ADC_CS, arp_r, acp_r, trig_r, ADC_rst, AD_CONV, ADC_OUT);
+	readSW, ADC_CS, arp_r, acp_r, trig_r, ADC_rst, AD_CONV, ADC_OUT, stcSW);
 	parameter DACcount = 5'd25;
   input clk, reset, ADC_OUT;
 	input readSW; //1 to read data from ADC, 0 to generate inside
+	input stcSW;
   output DAC_CLR, SPIin, SPIclk;
   output reg  DAC_CS, trig, arp, acp, ADC_CS, ADC_rst, AD_CONV; //ADC_rst is AMP_SHDN
   reg [19:0] DACreg;
@@ -32,17 +34,21 @@ module radar_board(arp, acp, trig, reset, clk, SPIin, DAC_CLR, SPIclk, DAC_CS, L
 	reg [7:0] ADCin;
 	reg [3:0] ADC_rstState;
 	reg [5:0] ADC_state;
-
+	wire [11:0] video_stc, video_nstc;
+	
   radar signalGenerator(.arp(arp_g), .acp(acp_g), .trig(trig_g), .rst(rst), .clk(clk), .video(video_g));
 
 	assign rst = reset | setReset;
-
-
+	
+	stc stcMod (.clk(clk), .trig(trig), .vid_in(video_nstc), .vid_out(video_stc), .rst(rst));
+	 
+		assign video = (stcSW) ? video_stc : video_nstc;
+	 
 		assign ADCclk = clk & (~DAC_CS);
 
 	  assign SPIin = (DACactive) ? DACreg[19] : ADCin[7];
 
-		assign video = (readSW) ? video_r : video_g;
+		assign video_nstc = (readSW) ? video_r : video_g;
 
 		assign video_r = readData[13:2] + 12'b011111111111; //convert readdata to unsigned 12 bit
 

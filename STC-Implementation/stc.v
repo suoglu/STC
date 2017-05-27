@@ -10,7 +10,7 @@ module stc(clk, trig, vid_in, vid_out, rst);
   reg [11:0] shiftControl; //enables corresponding shift
   //wires below for code readability
   wire [11:0] midTerm1[11:0];
-  wire [2:0]  midTerm2[11:0];
+  wire [11:0]  midTerm2[2:0];
   wire trigKill;
 
 //if sample is at limit trigger is equal to trigKill
