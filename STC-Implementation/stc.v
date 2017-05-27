@@ -1,9 +1,9 @@
 // Yigit Suoglu
 // This module implements sensitivity time control function to input video
 // This module designed to work with 50 MHz clock
-module stc(clk, trig, vid_in, vid_out);
-  parameter sampleLimit = 12'b111111111111;
-  input clk, trig;
+module stc(clk, trig, vid_in, vid_out, rst);
+  parameter sampleLimit = 12'd2626;
+  input clk, trig, rst;
   input [11:0] vid_in;
   output [11:0] vid_out;
   reg [11:0] sampleCount; //each sample is ~6m apart
@@ -11,10 +11,18 @@ module stc(clk, trig, vid_in, vid_out);
   //wires below for code readability
   wire [11:0] midTerm1[11:0];
   wire [2:0]  midTerm2[11:0];
+  wire trigKill;
 
-  always@(posedge clk or posedge trig) //state transactions
+//if sample is at limit trigger is equal to trigKill
+  assign trigKill = trig & (|(~(sampleCount ^ sampleLimit)));
+
+  always@(posedge clk or posedge trigKill or posedge rst) //state transactions
     begin
-      if(trig)
+      if(rst)
+        begin
+          sampleCount <= sampleLimit;
+        end
+      else if(trigKill)
         begin
           sampleCount <= 0;
         end
