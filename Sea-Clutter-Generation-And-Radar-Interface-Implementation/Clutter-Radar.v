@@ -35,15 +35,15 @@ module radar_board(arp, acp, trig, reset, clk, SPIin, DAC_CLR, SPIclk, DAC_CS, L
 	reg [3:0] ADC_rstState;
 	reg [5:0] ADC_state;
 	wire [11:0] video_stc, video_nstc;
-	
+
   radar signalGenerator(.arp(arp_g), .acp(acp_g), .trig(trig_g), .rst(rst), .clk(clk), .video(video_g));
 
 	assign rst = reset | setReset;
-	
+
 	stc stcMod (.clk(clk), .trig(trig), .vid_in(video_nstc), .vid_out(video_stc), .rst(rst));
-	 
+
 		assign video = (stcSW) ? video_stc : video_nstc;
-	 
+
 		assign ADCclk = clk & (~DAC_CS);
 
 	  assign SPIin = (DACactive) ? DACreg[19] : ADCin[7];
@@ -275,7 +275,7 @@ module radar_board(arp, acp, trig, reset, clk, SPIin, DAC_CLR, SPIclk, DAC_CS, L
 
 	  assign shiftReset = ~(|DACstate);
 
-	  always@(negedge SPIclk or posedge shiftReset)
+	always@(negedge SPIclk or posedge shiftReset)
 		begin
 		if(shiftReset) //dac register
 			begin
